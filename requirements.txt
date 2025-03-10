@@ -1,0 +1,11 @@
+Flask
+torch
+torchaudio
+torchvision
+boto3
+numpy
+pandas
+scikit-learn
+gunicorn
+requests
+lz4
