@@ -3,3 +3,4 @@ logs/
 venv/
 *.pyc
 tests/data/
+data/

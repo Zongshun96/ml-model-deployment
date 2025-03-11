@@ -8,6 +8,10 @@ app = Flask(__name__)
 # Load the model when the application starts
 model = load_model()
 
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'healthy'}), 200
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
