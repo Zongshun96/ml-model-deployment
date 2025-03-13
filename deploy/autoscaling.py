@@ -52,6 +52,8 @@ def create_target_group():
         HealthCheckProtocol='HTTP',
         HealthCheckPort='5000',
         HealthCheckPath='/',
+        HealthCheckTimeoutSeconds=2,
+        HealthCheckIntervalSeconds=5,
         TargetType='instance'
     )
     target_group = response['TargetGroups'][0]
