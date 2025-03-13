@@ -1,12 +1,12 @@
 from utils.config import DEVICE
 import time
 
-def sdn_test_early_exits(model, b_x):
+def sdn_test_early_exits(model, b_x, CONFIDENCE_THRESHOLD):
     IaaS_runtime_0 = time.time()
     b_x = b_x.to(DEVICE)
     # high_conf_mask_l, output_l, output_id_l, processed_output_id_l, is_early_l, local_time_l, remote_prep_time_l, remote_time_l, remote_finish_time_l, FaaS_metrics_d_l = [],[],[],[],[],[],[],[],[],[]
     high_conf_mask_l, output_l, output_id_l, processed_output_id_l, is_early_l, IaaS_metrics_d_l, FaaS_metrics_d_l = [],[],[],[],[],[],[]
-    for counter_metrics, progress_metrics in model(b_x):
+    for counter_metrics, progress_metrics in model(b_x, CONFIDENCE_THRESHOLD):
         (high_conf_mask, batch_output, batch_output_id, processed_output_id, is_early, local_time, layer_time, self_layer_time, self_output_time, remote_prep_time, remote_time, remote_finish_time, FaaS_metrics_d), (layer_time_l, self_layer_time_l, self_output_time_l) = counter_metrics, progress_metrics
         IaaS_runtime_1 = time.time()
         high_conf_mask_l.append(high_conf_mask)

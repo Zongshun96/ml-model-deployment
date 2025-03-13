@@ -286,7 +286,7 @@ class VGG_SDN(nn.Module):
         return outputs
 
     # takes a single input
-    def early_exit(self, x):
+    def early_exit(self, x, CONFIDENCE_THRESHOLD):
         local_time_start = time.time()
         max_confidences = []
         outputs = []
@@ -357,7 +357,7 @@ class VGG_SDN(nn.Module):
                     max_confidence, max_conf_index = torch.max(softmax, dim=1)
                     max_confidences.append(max_confidence)
 
-                    high_conf_mask = max_confidence >= self.confidence_threshold
+                    high_conf_mask = max_confidence >= CONFIDENCE_THRESHOLD
                     low_conf_mask = ~high_conf_mask  # Inverse of high_conf_mask
 
                     # high_conf_samples_confidences = softmax[high_conf_mask]

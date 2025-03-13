@@ -23,6 +23,7 @@ def predict():
 
     # Expect the input data to be a base64 encoded, lz4-compressed blob
     encoded_input = data['input']['data']
+    CONFIDENCE_THRESHOLD = data['input']['confidence_threshold']
     
     try:
         # Decode from base64
@@ -39,7 +40,7 @@ def predict():
     input_tensor = loaded_input if isinstance(loaded_input, torch.Tensor) else torch.tensor(loaded_input)
 
     # Call the early exit function to get predictions
-    high_conf_mask_l, output_l, output_id_l, processed_output_id_l, is_early_l, IaaS_metrics_d_l, FaaS_metrics_d_l = sdn_test_early_exits(model, input_tensor)
+    high_conf_mask_l, output_l, output_id_l, processed_output_id_l, is_early_l, IaaS_metrics_d_l, FaaS_metrics_d_l = sdn_test_early_exits(model, input_tensor, CONFIDENCE_THRESHOLD)
     
     # Package predictions in a dictionary
     predictions = {
