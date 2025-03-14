@@ -286,7 +286,7 @@ class VGG_SDN(nn.Module):
         return outputs
 
     # takes a single input
-    def early_exit(self, x, CONFIDENCE_THRESHOLD):
+    def early_exit(self, x, CONFIDENCE_THRESHOLD, CUT_OUTPUT_IDX):
         local_time_start = time.time()
         max_confidences = []
         outputs = []
@@ -302,7 +302,7 @@ class VGG_SDN(nn.Module):
         for layer_idx, layer in enumerate(self.layers):
 
             # Cut Control
-            if output_id < self.cut_output_idx:
+            if output_id < CUT_OUTPUT_IDX:
                 # logging.info(layer)
                 # passed_layers_l.append((layer_idx, output_id))
                 
