@@ -519,7 +519,7 @@ class VGG_SDN(nn.Module):
             'output_id':output_id, 
             # 'device': "cpu", 
             'fwd':fwd, 
-            'confidence_threshold':self.confidence_threshold, 
+            'confidence_threshold':CONFIDENCE_THRESHOLD, 
             'outputs':outputs, 
             'max_confidences':max_confidences,
             }
