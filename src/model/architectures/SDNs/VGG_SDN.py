@@ -308,7 +308,7 @@ class VGG_SDN(nn.Module):
                 
                 # # ============================
                 logging.info('---------------------------- layer {} ------------------'.format(layer_idx))
-                logging.info(layer)
+                # logging.info(layer)
                 # ============================
                 # from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
                 # with torch.no_grad():
@@ -333,7 +333,7 @@ class VGG_SDN(nn.Module):
                 # logging.info('{:<30}  {:<8}'.format('Computational complexity: ', macs))
                 # logging.info('{:<30}  {:<8}'.format('Number of parameters: ', params))
                 # # ============================
-                logging.info('---------------------------------------------------------')
+                # logging.info('---------------------------------------------------------')
 
                 total_layer_time_0 = time.time()
                 fwd, is_output, output, self_layer_time, self_output_time = layer(fwd)
@@ -437,7 +437,7 @@ class VGG_SDN(nn.Module):
         else:            
             # logging.info("FE: passed_layers_l: ", passed_layers_l)
             logging.info('---------------------------- layer {} ------------------'.format(layer_idx+1))
-            logging.info(self.end_layers)
+            # logging.info(self.end_layers)
             # ============================
             # from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
             # with torch.no_grad():
