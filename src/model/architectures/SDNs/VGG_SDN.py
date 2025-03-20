@@ -310,17 +310,18 @@ class VGG_SDN(nn.Module):
                 logging.info('---------------------------- layer {} ------------------'.format(layer_idx))
                 logging.info(layer)
                 # ============================
-                from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
+                # from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
                 # with torch.no_grad():
                 #     # Profile the model
                 #     with profile(activities=[ProfilerActivity.CPU], with_flops=True, with_modules=True) as prof:
                 #         layer(fwd)
                 #         # Print the profiling results
                 #     logging.info(prof.key_averages(group_by_input_shape=True).table(sort_by="flops", row_limit=10))
-                with profile(activities=[ProfilerActivity.CPU], with_flops=True, profile_memory=True, record_shapes=True, on_trace_ready=tensorboard_trace_handler('./log')) as prof:
-                    with record_function("model_inference"):
-                        layer(fwd)
-                logging.info(prof.key_averages().table())
+                
+                # with profile(activities=[ProfilerActivity.CPU], with_flops=True, profile_memory=True, record_shapes=True, on_trace_ready=tensorboard_trace_handler('./log')) as prof:
+                #     with record_function("model_inference"):
+                #         layer(fwd)
+                # logging.info(prof.key_averages().table())
                 # ============================
                 # # ============================
                 # import profiler
@@ -445,10 +446,11 @@ class VGG_SDN(nn.Module):
             #         layer(fwd)
             #         # Print the profiling results
             #     logging.info(prof.key_averages(group_by_input_shape=True).table(sort_by="flops", row_limit=10))
-            with profile(activities=[ProfilerActivity.CPU], with_flops=True, profile_memory=True, record_shapes=True, on_trace_ready=tensorboard_trace_handler('./log')) as prof:
-                with record_function("model_inference"):
-                    self.end_layers(fwd)
-            logging.info(prof.key_averages().table())
+            # 
+            # with profile(activities=[ProfilerActivity.CPU], with_flops=True, profile_memory=True, record_shapes=True, on_trace_ready=tensorboard_trace_handler('./log')) as prof:
+            #     with record_function("model_inference"):
+            #         self.end_layers(fwd)
+            # logging.info(prof.key_averages().table())
             # ============================
             # # ============================
             # from ptflops import get_model_complexity_info
