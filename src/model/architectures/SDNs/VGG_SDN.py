@@ -550,7 +550,7 @@ class VGG_SDN(nn.Module):
         
         # Invoke the Lambda function
         # r = requests.post("http://127.0.0.1:3000/classify_digit", json=payload)
-        r = requests.post("https://px0myo9fp3.execute-api.us-east-2.amazonaws.com/Prod/classify_digit/", json=payload)
+        r = requests.post("https://8042ygkel1.execute-api.us-east-2.amazonaws.com/Prod/classify_digit/", json=payload)
         # lambda_client = boto3.client('lambda', region_name='us-east-2')
         # r = lambda_client.invoke(
         #     FunctionName='pytorch-lambda-example-InferenceFunction-SjR6pspU4srk',
