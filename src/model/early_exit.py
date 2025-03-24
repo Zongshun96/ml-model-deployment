@@ -1,5 +1,6 @@
 from utils.config import DEVICE
 import time
+import copy
 
 def sdn_test_early_exits(model, b_x, CONFIDENCE_THRESHOLD, CUT_OUTPUT_IDX):
     IaaS_runtime_0 = time.time()
@@ -20,13 +21,12 @@ def sdn_test_early_exits(model, b_x, CONFIDENCE_THRESHOLD, CUT_OUTPUT_IDX):
         IaaS_metrics_d["IaaS_local_time"] = local_time
         IaaS_metrics_d["IaaS_self_layer_time"] = self_layer_time
         IaaS_metrics_d["IaaS_self_output_time"] = self_output_time
-        IaaS_metrics_d["IaaS_layer_time_l"] = layer_time_l
-        IaaS_metrics_d["IaaS_self_layer_time_l"] = self_layer_time_l
-        IaaS_metrics_d["IaaS_self_output_time_l"] = self_output_time_l
+        IaaS_metrics_d["IaaS_layer_time_l"] = copy.deepcopy(layer_time_l)
+        IaaS_metrics_d["IaaS_self_layer_time_l"] = copy.deepcopy(self_layer_time_l)
+        IaaS_metrics_d["IaaS_self_output_time_l"] = copy.deepcopy(self_output_time_l)
         IaaS_metrics_d["IaaS_remote_prep_time"] = remote_prep_time
         IaaS_metrics_d["IaaS_remote_time"] = remote_time
         IaaS_metrics_d["IaaS_remote_finish_time"] = remote_finish_time
         IaaS_metrics_d["IaaS_runtime"] = [IaaS_runtime_1-IaaS_runtime_0]*len(batch_output)
         IaaS_metrics_d_l.append(IaaS_metrics_d)
-
     return high_conf_mask_l, output_l, output_id_l, processed_output_id_l, is_early_l, IaaS_metrics_d_l, FaaS_metrics_d_l
