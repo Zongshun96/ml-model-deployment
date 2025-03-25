@@ -12,8 +12,8 @@ TARGET_GROUP_NAME = "my-target-group"
 VPC_SUBNETS = ['subnet-0a1f3a70', 'subnet-8b1b96c7', 'subnet-12da3579']  # List of subnet IDs
 SECURITY_GROUPS = ['sg-ef62268b', 'sg-0f50940870990528a']
 VPC_ID = 'vpc-18af6873'  # Your VPC ID
-AMI_ID = 'ami-0186f4d621801e196' # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b'
-INSTANCE_TYPE = 'c6i.large'
+AMI_ID = 'ami-086ee73ee039c8623' # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b'
+INSTANCE_TYPE = 'c6i.xlarge'
 KEY_NAME = 'experiment-EC2'  # Name of your pre-created key pair
 USER_DATA_FILE = "/home/cc/ml-model-deployment/deploy/user_data.sh"  # Path to the user-data file
 
@@ -52,13 +52,33 @@ def create_target_group():
         HealthCheckProtocol='HTTP',
         HealthCheckPort='5000',
         HealthCheckPath='/',
-        HealthCheckTimeoutSeconds=2,
+        HealthCheckTimeoutSeconds=4,
         HealthCheckIntervalSeconds=5,
-        TargetType='instance'
+        HealthyThresholdCount=2,
+        UnhealthyThresholdCount=2,
+        TargetType='instance',
+        # Attributes=[
+        #     {
+        #         'Key': 'deregistration_delay.timeout_seconds',
+        #         'Value': '10'  # Desired delay in seconds (as a string)
+        #     }
+        # ]
     )
     target_group = response['TargetGroups'][0]
     target_group_arn = target_group['TargetGroupArn']
     print(f"Created Target Group with ARN: {target_group_arn}")
+    
+    # Update the target group's deregistration delay
+    modify_response = elbv2.modify_target_group_attributes(
+        TargetGroupArn=target_group_arn,
+        Attributes=[
+            {
+                'Key': 'deregistration_delay.timeout_seconds',
+                'Value': '10'  # Desired delay in seconds
+            }
+        ]
+    )
+    print(modify_response)
     return target_group_arn
 
 def create_listener(alb_arn, target_group_arn):
@@ -127,9 +147,9 @@ def create_asg(target_group_arn):
     asg_client.create_auto_scaling_group(
         AutoScalingGroupName=ASG_NAME,
         LaunchConfigurationName=LAUNCH_CONFIG_NAME,
-        MinSize=1,
+        MinSize=0,
         MaxSize=5,
-        DesiredCapacity=1,
+        DesiredCapacity=0,
         VPCZoneIdentifier=",".join(VPC_SUBNETS),
         TargetGroupARNs=[target_group_arn]
     )
