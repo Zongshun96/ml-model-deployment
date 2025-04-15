@@ -1,0 +1,404 @@
+from flask import Flask, request, jsonify
+import os
+import pickle
+import time
+import numpy as np
+import xgboost as xgb
+import scipy.sparse
+import scipy
+import multiprocessing as mp
+from collections import defaultdict
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import accuracy_score, f1_score, precision_score, hamming_loss
+# from tqdm import tqdm  # Optional: for local debugging; in production you might want to remove it.
+
+# -----------------------------
+# Helper Functions
+# -----------------------------
+def has_intersection(from_set, to_set):
+    for ele in from_set:
+        if ele in to_set:
+            return True
+    return False
+
+def get_intersection(from_set, to_set):
+    ret = []
+    for ele in from_set:
+        if ele in to_set:
+            ret.append(ele)
+    return ret
+
+def tagsets_to_matrix(tags_path, tag_files_l=None, index_tag_mapping_path=None, tag_index_mapping_path=None,
+                      index_label_mapping_path=None, label_index_mapping_path=None, cwd="/home/cc/Praxi-Pipeline/prediction_base_image/model_testing_scripts/cwd/",
+                      train_flag=False, inference_flag=True, iter_flag=False, packages_select_set=set(), tokens_filter_set=set(),
+                      input_size=None, compact_factor=1, freq=100, all_tags_set=None, all_label_set=None,
+                      tags_by_instance_l=None, labels_by_instance_l=None, tagset_files=None, feature_importance=np.array([])):
+    # op_durations records runtime for various parts:
+    op_durations = defaultdict(int)
+    
+    # Set mapping paths if not provided.
+    if index_tag_mapping_path is None:
+        index_tag_mapping_path = cwd + 'index_tag_mapping'
+        tag_index_mapping_path = cwd + 'tag_index_mapping'
+        index_label_mapping_path = cwd + 'index_label_mapping'
+        label_index_mapping_path = cwd + 'label_index_mapping'
+        # Iterative mapping paths
+        index_tag_mapping_iter_path = cwd + "index_tag_mapping_iter"
+        tag_index_mapping_iter_path = cwd + "tag_index_mapping_iter"
+        index_label_mapping_iter_path = cwd + "index_label_mapping_iter"
+        label_index_mapping_iter_path = cwd + "label_index_mapping_iter"
+    
+    # Generate mapping for tags.
+    t_gen_mapping_0 = time.time()
+    removed_tags_l = []
+    if train_flag and not iter_flag:  # Generate initial mapping.
+        all_tags_l = list(all_tags_set)
+        tag_index_mapping = {}
+        for idx, tag in enumerate(all_tags_l):
+            tag_index_mapping[tag] = idx
+        with open(index_tag_mapping_path, 'wb') as fp:
+            pickle.dump(all_tags_l, fp)
+        with open(tag_index_mapping_path, 'wb') as fp:
+            pickle.dump(tag_index_mapping, fp)
+    elif train_flag and iter_flag:  # Adding to mapping.
+        with open(index_tag_mapping_path, 'rb') as fp:
+            loaded_all_tags_l = pickle.load(fp)
+            loaded_all_tags_set = set(loaded_all_tags_l)
+            new_tags_set = all_tags_set.difference(loaded_all_tags_set)
+            all_tags_l = loaded_all_tags_l + list(new_tags_set)
+            with open(index_tag_mapping_iter_path, 'wb') as fp:
+                pickle.dump(all_tags_l, fp)
+        with open(tag_index_mapping_path, 'rb') as fp:
+            tag_index_mapping = pickle.load(fp)
+            for idx, tag in enumerate(all_tags_l[len(loaded_all_tags_l):]):
+                tag_index_mapping[tag] = idx + len(loaded_all_tags_l)
+            with open(tag_index_mapping_iter_path, 'wb') as fp:
+                pickle.dump(tag_index_mapping, fp)
+    elif not train_flag and iter_flag:  # Load iterative mapping.
+        with open(index_tag_mapping_iter_path, 'rb') as fp:
+            all_tags_l = pickle.load(fp)
+        with open(tag_index_mapping_iter_path, 'rb') as fp:
+            tag_index_mapping = pickle.load(fp)
+    # else:  # Load initial mapping.
+    #     # For inference, if no mapping file exists, we generate mapping on the fly.
+    #     all_tags_l = list(all_tags_set)
+    #     tag_index_mapping = {tag: idx for idx, tag in enumerate(all_tags_l)}
+    else:  # not train_flag and not iter_flag: Load initial mapping.
+        with open(index_tag_mapping_path, 'rb') as fp:
+            all_tags_l = pickle.load(fp)
+        with open(tag_index_mapping_path, 'rb') as fp:
+            tag_index_mapping = pickle.load(fp)
+    t_gen_mapping_t = time.time()
+    op_durations["gen_mapping"] = t_gen_mapping_t - t_gen_mapping_0
+    op_durations["len(all_tags_l)"] = len(all_tags_l)
+    
+    # Feature Matrix Generation
+    t_gen_mat_0 = time.time()
+    t_get_feature_0 = time.time()
+    instance_row_list = []
+    instance_row_idx_set = []
+    # Determine which tags (from mapping) are “used” based on feature importance.
+    print(cwd)
+    print(len(all_tags_l), np.where(feature_importance > 0)[0].tolist())
+    used_tags_set = set([all_tags_l[idx] for idx in np.where(feature_importance > 0)[0].tolist()])
+    t_get_feature_t = time.time()
+    op_durations["get_feature"] = t_get_feature_t - t_get_feature_0
+    
+    # Loop over each instance.
+    # Expecting tags_by_instance_l as a list of dictionaries {tag: count}
+    for instance_row_idx, instance_tags_d in enumerate(tags_by_instance_l):
+        if input_size is None:
+            input_size = len(all_tags_l) // compact_factor
+        t_selector_0 = time.time()
+        used_instance_tags_list = get_intersection(used_tags_set, instance_tags_d.keys())
+        if (feature_importance.size != 0) and not used_instance_tags_list:
+            t_selector_t = time.time()
+            op_durations["selector"] += t_selector_t - t_selector_0
+            continue
+        t_selector_t = time.time()
+        op_durations["selector"] += t_selector_t - t_selector_0
+        t_mat_builder_0 = time.time()
+        instance_row = np.zeros(input_size)
+        for tag_name in used_instance_tags_list:
+            # Map the tag to its column index and set its count.
+            instance_row[tag_index_mapping[tag_name] % input_size] = instance_tags_d[tag_name]
+        else:
+            instance_row_idx_set.append(instance_row_idx)
+            instance_row_list.append(scipy.sparse.csr_matrix(instance_row))
+        t_mat_builder_t = time.time()
+        op_durations["mat_builder"] += t_mat_builder_t - t_mat_builder_0
+    # Count of instances processed.
+    instance_row_count = instance_row_idx + 1 if tags_by_instance_l else 0
+    
+    t_list_to_mat_0 = time.time()
+    if instance_row_list:
+        feature_matrix = scipy.sparse.vstack(instance_row_list)
+    else:
+        feature_matrix = scipy.sparse.csr_matrix([])
+    t_list_to_mat_t = time.time()
+    t_gen_mat_t = time.time()
+    op_durations["list_to_mat"] = t_list_to_mat_t - t_list_to_mat_0
+    op_durations["gen_mat"] = t_gen_mat_t - t_gen_mat_0
+
+    # Label Matrix Generation (only if not inference; i.e. during training)
+    label_matrix = np.array([])
+    if not inference_flag:
+        removed_label_l = []
+        if train_flag and not iter_flag:
+            all_label_l = list(all_label_set)
+            label_index_mapping = {}
+            for idx, label in enumerate(all_label_l):
+                label_index_mapping[label] = idx
+            with open(index_label_mapping_path, 'wb') as fp:
+                pickle.dump(all_label_l, fp)
+            with open(label_index_mapping_path, 'wb') as fp:
+                pickle.dump(label_index_mapping, fp)
+        elif train_flag and iter_flag:
+            with open(index_label_mapping_path, 'rb') as fp:
+                loaded_all_label_l = pickle.load(fp)
+                loaded_all_label_set = set(loaded_all_label_l)
+                new_label_set = all_label_set.difference(loaded_all_label_set)
+                all_label_l = loaded_all_label_l + list(new_label_set)
+                with open(index_label_mapping_iter_path, 'wb') as fp:
+                    pickle.dump(all_label_l, fp)
+            with open(label_index_mapping_path, 'rb') as fp:
+                label_index_mapping = pickle.load(fp)
+                for idx, label in enumerate(all_label_l[len(loaded_all_label_l):]):
+                    label_index_mapping[label] = idx + len(loaded_all_label_l)
+                with open(index_label_mapping_iter_path, 'wb') as fp:
+                    pickle.dump(label_index_mapping, fp)
+        elif not train_flag and iter_flag:
+            with open(index_label_mapping_iter_path, 'rb') as fp:
+                all_label_l = pickle.load(fp)
+            with open(label_index_mapping_iter_path, 'rb') as fp:
+                label_index_mapping = pickle.load(fp)
+        else:
+            with open(index_label_mapping_path, 'rb') as fp:
+                all_label_l = pickle.load(fp)
+            with open(label_index_mapping_path, 'rb') as fp:
+                label_index_mapping = pickle.load(fp)
+        instance_row_list_lbl = []
+        for instance_row_idx, labels in enumerate(labels_by_instance_l):
+            instance_row = np.zeros(len(all_label_l))
+            for label in labels:
+                if label in label_index_mapping:
+                    instance_row[label_index_mapping[label]] = 1
+                else:
+                    removed_label_l.append(label)
+            else:
+                instance_row_list_lbl.append(instance_row)
+        if instance_row_list_lbl:
+            label_matrix = np.vstack(instance_row_list_lbl)
+        else:
+            label_matrix = np.array([])
+        with open(cwd+'removed_label_l', 'wb') as fp:
+            pickle.dump(removed_label_l, fp)
+        with open(cwd+'removed_label_l.txt', 'w') as f:
+            for line in removed_label_l:
+                f.write(f"{line}\n")
+    
+    return ([tagset_files[instance_row_idx] for instance_row_idx in instance_row_idx_set],
+            feature_matrix, label_matrix, instance_row_idx_set, instance_row_count, dict(op_durations))
+
+
+def one_hot_to_names(mapping_path, one_hot_matrix, mapping=None):
+    if mapping is None:
+        with open(mapping_path, 'rb') as fp:
+            mapping = pickle.load(fp)
+    idxs_yx = np.nonzero(one_hot_matrix)
+    labels = defaultdict(list)
+    for row_idx, col_idx in zip(idxs_yx[0], idxs_yx[1]):
+        labels[int(row_idx)].append(mapping[col_idx])
+    return labels
+
+def merge_preds(labels_1, labels_2, labels_2_real_instance_row_idx_set=None):
+    if labels_2_real_instance_row_idx_set is None:
+        for idx in labels_2.keys():
+            labels_1[idx].extend(labels_2[idx])
+    else:
+        for idx, real_idx in enumerate(labels_2_real_instance_row_idx_set):
+            labels_1[real_idx].extend(labels_2[idx])
+    return labels_1
+
+# -----------------------------
+# Global Configuration & Model Loading
+# -----------------------------
+# (These configuration parameters match your original __main__ settings.)
+dataset = "data_4"
+n_models = 1  # adjust as needed
+shuffle_idx = 0
+test_sample_batch_idx = 0
+n_samples = 4
+clf_njobs = 32
+n_estimators = 100
+depth = 1
+input_size = None
+dim_compact_factor = 1
+tree_method = "exact"
+max_bin = 1
+with_filter = True
+freq = 25
+cwd_clf = "/home/cc/Praxi-Pipeline/prediction_XGBoost_openshift_image/model_testing_scripts_bak"
+
+# Global list to hold loaded models.
+models = []
+
+def load_models():
+    global models
+    for i in range(n_models):
+        clf_pathname = (
+            f"{cwd_clf}/cwd_ML_with_{dataset}_{n_models}_{i}_train_"
+            f"{shuffle_idx}shuffleidx_{test_sample_batch_idx}testsamplebatchidx_"
+            f"{n_samples}nsamples_{clf_njobs}njobs_{n_estimators}trees_"
+            f"{depth}depth_{input_size}-{dim_compact_factor}rawinput_sampling1_"
+            f"{tree_method}treemethod_{max_bin}maxbin_modize_par_{with_filter}"
+            f"{freq}removesharedornoisestags_verpak/model_init.json"
+        )
+        if not os.path.isfile(clf_pathname):
+            raise Exception(f"Model file missing: {clf_pathname}")
+        # clf = xgb.XGBClassifier(
+        #     max_depth=10,
+        #     learning_rate=0.1,
+        #     objective='binary:logistic',
+        #     n_jobs=8,
+        #     subsample=0.8,
+        #     colsample_bytree=0.8,
+        #     colsample_bylevel=0.8,
+        # )
+        clf = xgb.XGBClassifier(max_depth=10, learning_rate=0.1,silent=False, objective='binary:logistic', \
+                booster='gbtree', n_jobs=8, nthread=None, gamma=0, min_child_weight=1, max_delta_step=0, \
+                subsample=0.8, colsample_bytree=0.8, colsample_bylevel=0.8, reg_alpha=0, reg_lambda=1)
+        print(clf_pathname)
+        clf.load_model(clf_pathname)
+        mapping_path = clf_pathname.replace("model_init.json", "index_label_mapping")
+        if not os.path.isfile(mapping_path):
+            raise Exception(f"Mapping file missing for model {clf_pathname}: {mapping_path}")
+        with open(mapping_path, 'rb') as fp:
+            mapping = pickle.load(fp)
+        feature_importance = {idx: imp for idx, imp in enumerate(clf.feature_importances_)}
+        # Also store the cwd used in training (derived from the model path).
+        model_cwd = clf_pathname[:-15]
+        models.append({
+            "clf": clf,
+            "mapping": mapping,
+            "feature_importance": feature_importance,
+            "cwd": model_cwd
+        })
+
+load_models()
+
+# -----------------------------
+# Flask Application & /predict Endpoint
+# -----------------------------
+app = Flask(__name__)
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    """
+    Expected JSON format:
+    {
+      "samples": [
+         {
+             "instance_id": 0,
+             "tags": ["tag1", "tag2", "tag3"],
+             "true_labels": ["label1", "label2"]  // Optional
+         },
+         {
+             "instance_id": 1,
+             "tags": ["tag2", "tag4"],
+             "true_labels": ["label2"]
+         }
+      ]
+    }
+    Returns merged predictions from all models and evaluation metrics (if true_labels provided),
+    along with encoder timing metrics.
+    """
+    data = request.get_json(force=True)
+    samples = data.get('samples', [])
+    if not samples:
+        return jsonify({"error": "No samples provided"}), 400
+
+    # Prepare lists and sets from samples.
+    instance_ids = []
+    tags_by_instance_l = []
+    labels_by_instance_l = []
+    tagset_files = []
+    all_tags_set = set()
+    all_label_set = set()
+    for sample in samples:
+        instance_ids.append(sample.get("instance_id"))
+        # Convert tag list to dictionary with count 1 (if not already a dict)
+        raw_tags = sample.get("tags", [])
+        instance_tags = {}
+        for tag in raw_tags:
+            instance_tags[tag] = 1
+            all_tags_set.add(tag)
+        tags_by_instance_l.append(instance_tags)
+        tagset_files.append(str(sample.get("instance_id")))
+        # Process true labels if provided.
+        true_labels = sample.get("true_labels", [])
+        for label in true_labels:
+            all_label_set.add(label)
+        labels_by_instance_l.append(true_labels)
+
+    merged_predictions = defaultdict(list)
+    encoder_metrics = {}  # To accumulate op_durations per model
+
+    # For each loaded model, process the input tagsets.
+    for m_idx, model_info in enumerate(models):
+        model_cwd = model_info["cwd"]
+        # Call tagsets_to_matrix with arguments matching your __main__ invocation.
+        tagset_files_used, feature_matrix, label_matrix, instance_row_idx_set, instance_row_count, op_durations = tagsets_to_matrix(
+            tags_path="/home/cc/Praxi-Pipeline/data/data_4/tagset_ML_3_test/",
+            cwd=model_cwd,
+            all_tags_set=all_tags_set,
+            all_label_set=all_label_set,
+            tags_by_instance_l=tags_by_instance_l,
+            labels_by_instance_l=labels_by_instance_l,
+            tagset_files=tagset_files,
+            feature_importance=np.array(list(model_info["feature_importance"].values())),
+            inference_flag=False
+        )
+        encoder_metrics[f"model_{m_idx}"] = op_durations
+        
+        if feature_matrix.size != 0:
+            # Generate prediction from the model.
+            pred_label_matrix = model_info["clf"].predict(feature_matrix)
+            # Decode one-hot predictions to label names using your helper.
+            pred_label_name_d = one_hot_to_names("index_label_mapping", pred_label_matrix, mapping=model_info["mapping"])
+            merged_predictions = merge_preds(merged_predictions, pred_label_name_d)
+        else:
+            # If feature matrix is empty, ensure prediction is empty.
+            for idx in range(len(instance_ids)):
+                merged_predictions.setdefault(idx, [])
+
+    # Re-order predictions keyed by instance_id.
+    predictions = {inst_id: merged_predictions.get(idx, []) for idx, inst_id in enumerate(instance_ids)}
+
+    # Compute evaluation metrics if any true labels were provided.
+    metrics = {}
+    if any(len(lbls) > 0 for lbls in labels_by_instance_l):
+        all_labels = sorted(
+            set(label for labels in labels_by_instance_l for label in labels) |
+            set(label for labels in predictions.values() for label in labels)
+        )
+        if all_labels:
+            mlb = MultiLabelBinarizer(classes=all_labels)
+            true_binarized = mlb.fit_transform(labels_by_instance_l)
+            predicted_ordered = [predictions.get(inst_id, []) for inst_id in instance_ids]
+            predicted_binarized = mlb.transform(predicted_ordered)
+            metrics['accuracy'] = accuracy_score(true_binarized, predicted_binarized)
+            metrics['f1_score'] = f1_score(true_binarized, predicted_binarized, average='weighted')
+            metrics['precision'] = precision_score(true_binarized, predicted_binarized, average='weighted')
+            metrics['hamming_loss'] = hamming_loss(true_binarized, predicted_binarized)
+
+    response = {
+        "predictions": predictions,
+        "metrics": metrics,
+        "encoder_metrics": encoder_metrics  # runtime details from tagsets_to_matrix
+    }
+    return jsonify(response)
+
+if __name__ == '__main__':
+    # Use a production-ready WSGI server in production.
+    app.run(host='0.0.0.0', port=5000)

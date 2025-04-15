@@ -8,7 +8,7 @@ import torchvision
 def test_model_endpoint():
     # Server URL
     # url = "http://3.17.208.57:5000/predict"
-    url = "http://my-alb-625084945.us-east-2.elb.amazonaws.com:5000/predict"
+    url = "http://my-alb-1361133232.us-east-2.elb.amazonaws.com:5000/predict"
     
     # Create dummy input data (adjust shape/values based on your model's requirements)
     import torchvision.transforms as transforms

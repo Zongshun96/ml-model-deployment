@@ -12,10 +12,10 @@ TARGET_GROUP_NAME = "my-target-group"
 VPC_SUBNETS = ['subnet-0a1f3a70', 'subnet-8b1b96c7', 'subnet-12da3579']  # List of subnet IDs
 SECURITY_GROUPS = ['sg-ef62268b', 'sg-0f50940870990528a']
 VPC_ID = 'vpc-18af6873'  # Your VPC ID
-AMI_ID = 'ami-086ee73ee039c8623' # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b'
-INSTANCE_TYPE = 'c6i.xlarge'
+AMI_ID = 'ami-0884d2865dbe9de4b' # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b', ms-image: 'ami-086ee73ee039c8623', etc.
+INSTANCE_TYPE = 'c6i.large'
 KEY_NAME = 'experiment-EC2'  # Name of your pre-created key pair
-USER_DATA_FILE = "/home/cc/ml-model-deployment/deploy/user_data.sh"  # Path to the user-data file
+USER_DATA_FILE = "/home/cc/ml-model-deployment/deploy/user_data.init.ss"  # Path to the user-data file
 
 def read_user_data_script(file_path=USER_DATA_FILE):
     """Read the user-data script from a file."""
@@ -149,7 +149,7 @@ def create_asg(target_group_arn):
         LaunchConfigurationName=LAUNCH_CONFIG_NAME,
         MinSize=0,
         MaxSize=5,
-        DesiredCapacity=0,
+        DesiredCapacity=1,
         VPCZoneIdentifier=",".join(VPC_SUBNETS),
         TargetGroupARNs=[target_group_arn]
     )
@@ -195,21 +195,21 @@ def delete_alb(alb_arn):
 
 if __name__ == '__main__':
     # Create ALB, Target Group, and Listener
-    alb_arn, dns_name = create_alb()
+    # alb_arn, dns_name = create_alb()
     target_group_arn = create_target_group()
-    listener_arn = create_listener(alb_arn, target_group_arn)
+    # listener_arn = create_listener(alb_arn, target_group_arn)
     
     # Create Auto Scaling Group with instances that register to the target group
     create_asg(target_group_arn)
     
-    # Print the ALB HTTP address
-    print("\nALB HTTP Address:", f"http://{dns_name}")
+    # # Print the ALB HTTP address
+    # print("\nALB HTTP Address:", f"http://{dns_name}")
     
     # Wait for testing, then clean up resources.
     input("\nPress Enter to delete all resources...")
     
     # Delete ASG, Listener, Target Group, and ALB
     delete_asg()
-    delete_listener(listener_arn)
+    # delete_listener(listener_arn)
     delete_target_group(target_group_arn)
-    delete_alb(alb_arn)
+    # delete_alb(alb_arn)
