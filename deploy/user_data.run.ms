@@ -22,7 +22,7 @@ REPO_PATH="/home/ubuntu/ml-model-deployment"
 # # Install Python packages
 # echo "Installing Python requirements..."
 cd "$REPO_PATH"
-# sudo pip3 install -r requirements.txt
+# sudo pip3 install -r requirements.ms
 
 # Pull the latest changes
 echo "Pulling the changes..."
@@ -30,4 +30,4 @@ git pull origin main
 
 # Run the application
 echo "Starting the application..."
-python3 "src/app.py" &
+python3 "src_ms/app.py" &

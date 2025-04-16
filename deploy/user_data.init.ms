@@ -30,4 +30,4 @@ git pull origin main
 
 # Run the application
 echo "Starting the application..."
-python3 "src_ss/app.py" &
+python3 "src_ms/app.py" &
