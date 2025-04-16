@@ -319,15 +319,22 @@ def predict():
             feature_importance=np.array(list(model_info["feature_importance"].values())),
             inference_flag=False
         )
-        encoder_metrics[f"model_{m_idx}"] = op_durations
+        # encoder_metrics[f"model_{m_idx}"] = op_durations
         
         if feature_matrix.size != 0:
+            t_predict_0 = time.time()
             pred_label_matrix = model_info["clf"].predict(feature_matrix)
+            t_predict_t = time.time()
+            op_durations["predict_time"] = t_predict_t - t_predict_0
+            op_durations["feature_matrix_size"] = feature_matrix.size
+            op_durations["feature_matrix_xsize"] = feature_matrix.shape[0]
+            op_durations["feature_matrix_ysize"] = feature_matrix.shape[1]
             pred_label_name_d = one_hot_to_names("index_label_mapping", pred_label_matrix, mapping=model_info["mapping"])
             merged_predictions = merge_preds(merged_predictions, pred_label_name_d, instance_row_idx_set)
         else:
             for idx in range(len(instance_ids)):
                 merged_predictions.setdefault(idx, [])
+        encoder_metrics[f"model_{m_idx}"] = op_durations
 
     predictions = {inst_id: merged_predictions.get(idx, []) for idx, inst_id in enumerate(instance_ids)}
 
