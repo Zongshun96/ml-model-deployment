@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
+import gzip
 import os
 import pickle
 import time
@@ -263,22 +264,28 @@ def predict():
     Expected JSON format:
     {
       "samples": [
-         {
-             "instance_id": 0,
-             "tags": ["tag1", "tag2", "tag3"],
-             "true_labels": ["label1", "label2"]  // Optional
-         },
-         {
-             "instance_id": 1,
-             "tags": ["tag2", "tag4"],
-             "true_labels": ["label2"]
-         }
+         { "instance_id": 0, "tags": ["tag1","tag2"], "true_labels": ["label1"] },
+         …
       ]
     }
-    Returns merged predictions from all models and evaluation metrics (if true_labels provided),
-    along with encoder timing metrics.
+    Returns gzipped JSON:
+      {
+        "predictions": { … },
+        "metrics": { … },
+        "encoder_metrics": { … }
+      }
     """
-    data = request.get_json(force=True)
+    # 1) Decompress incoming request if gzip-encoded
+    if request.headers.get("Content-Encoding", "").lower() == "gzip":
+        try:
+            compressed = request.get_data()
+            body = gzip.decompress(compressed)
+            data = json.loads(body.decode("utf-8"))
+        except Exception as e:
+            return jsonify({"error": "Invalid gzip payload", "detail": str(e)}), 400
+    else:
+        data = request.get_json(force=True)
+
     samples = data.get('samples', [])
     if not samples:
         return jsonify({"error": "No samples provided"}), 400
@@ -370,7 +377,17 @@ def predict():
         "metrics": metrics,
         "encoder_metrics": encoder_metrics
     }
-    return jsonify(response)
+
+    # 2) Serialize and gzip-compress the JSON response
+    resp_bytes = json.dumps(response).encode("utf-8")
+    gzipped = gzip.compress(resp_bytes)
+
+    return Response(
+        gzipped,
+        status=200,
+        mimetype="application/json",
+        headers={"Content-Encoding": "gzip"}
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
