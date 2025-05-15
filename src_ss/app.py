@@ -190,7 +190,7 @@ tree_method = "exact"
 max_bin = 1
 with_filter = True
 freq = 25
-cwd_clf = "/home/cc/ml-model-deployment/src_ss/models"
+cwd_clf = "/home/ubuntu/ml-model-deployment/src_ss/models"
 
 # Global list to hold loaded models.
 models = []
