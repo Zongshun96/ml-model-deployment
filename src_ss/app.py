@@ -8,6 +8,7 @@ import xgboost as xgb
 import scipy.sparse
 import scipy
 import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from collections import defaultdict
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import accuracy_score, f1_score, precision_score, hamming_loss, recall_score
@@ -138,6 +139,40 @@ def merge_preds(labels_1, labels_2, labels_2_real_instance_row_idx_set=None):
             labels_1[real_idx].extend(labels_2[idx])
     return labels_1
 
+def _process_model(m_idx, model_info, tags_by_instance_l, labels_by_instance_l, tagset_files):
+    # 1) Build feature/label matrices and gather timings
+    (tagset_files_used, feature_matrix, label_matrix,
+     instance_row_idx_set, instance_row_count, op_durations
+    ) = tagsets_to_matrix(
+        all_tags_l=model_info["all_tags_l"],
+        tag_index_mapping=model_info["tag_index_mapping"],
+        all_label_l=model_info["all_label_l"],
+        label_index_mapping=model_info["label_index_mapping"],
+        tags_by_instance_l=tags_by_instance_l,
+        labels_by_instance_l=labels_by_instance_l,
+        tagset_files=tagset_files,
+        feature_importance=np.array(list(model_info["feature_importance"].values())),
+        inference_flag=False
+    )
+    # 2) Run prediction if there is data
+    if feature_matrix.size:
+        t0 = time.time()
+        preds = model_info["clf"].predict(feature_matrix)
+        t1 = time.time()
+        op_durations.update({
+            "predict_time": t1 - t0,
+            "feature_matrix_size": feature_matrix.size,
+            "feature_matrix_xsize": feature_matrix.shape[0],
+            "feature_matrix_ysize": feature_matrix.shape[1],
+        })
+        pred_label_name_d = one_hot_to_names("index_label_mapping", preds, mapping=model_info["mapping"])
+        # Return durations and this model’s local predictions
+        return m_idx, op_durations, (instance_row_idx_set, pred_label_name_d)
+    else:
+        # No features: return empty preds for all instances
+        empty_pred = [(i, []) for i in range(len(tags_by_instance_l))]
+        return m_idx, op_durations, ([], dict(empty_pred))
+
 # -----------------------------
 # Global Configuration & Model Loading
 # -----------------------------
@@ -155,7 +190,7 @@ tree_method = "exact"
 max_bin = 1
 with_filter = True
 freq = 25
-cwd_clf = "/home/ubuntu/ml-model-deployment/src_ss/models"
+cwd_clf = "/home/cc/ml-model-deployment/src_ss/models"
 
 # Global list to hold loaded models.
 models = []
@@ -310,40 +345,69 @@ def predict():
             all_label_set.add(label)
         labels_by_instance_l.append(true_labels)
 
+
+    # merged_predictions = defaultdict(list)
+    # encoder_metrics = {}
+
+    # # Process each model.
+    # for m_idx, model_info in enumerate(models):
+    #     tagset_files_used, feature_matrix, label_matrix, instance_row_idx_set, instance_row_count, op_durations = tagsets_to_matrix(
+    #         all_tags_l=model_info["all_tags_l"],
+    #         tag_index_mapping=model_info["tag_index_mapping"],
+    #         all_label_l=model_info["all_label_l"],
+    #         label_index_mapping=model_info["label_index_mapping"],
+    #         tags_by_instance_l=tags_by_instance_l,
+    #         labels_by_instance_l=labels_by_instance_l,
+    #         tagset_files=tagset_files,
+    #         feature_importance=np.array(list(model_info["feature_importance"].values())),
+    #         inference_flag=False
+    #     )
+    #     # encoder_metrics[f"model_{m_idx}"] = op_durations
+        
+    #     if feature_matrix.size != 0:
+    #         t_predict_0 = time.time()
+    #         pred_label_matrix = model_info["clf"].predict(feature_matrix)
+    #         t_predict_t = time.time()
+    #         op_durations["predict_time"] = t_predict_t - t_predict_0
+    #         op_durations["feature_matrix_size"] = feature_matrix.size
+    #         op_durations["feature_matrix_xsize"] = feature_matrix.shape[0]
+    #         op_durations["feature_matrix_ysize"] = feature_matrix.shape[1]
+    #         pred_label_name_d = one_hot_to_names("index_label_mapping", pred_label_matrix, mapping=model_info["mapping"])
+    #         merged_predictions = merge_preds(merged_predictions, pred_label_name_d, instance_row_idx_set)
+    #     else:
+    #         for idx in range(len(instance_ids)):
+    #             merged_predictions.setdefault(idx, [])
+    #     encoder_metrics[f"model_{m_idx}"] = op_durations
+
+    # predictions = {inst_id: merged_predictions.get(idx, []) for idx, inst_id in enumerate(instance_ids)}
+
+
+
+
     merged_predictions = defaultdict(list)
     encoder_metrics = {}
 
-    # Process each model.
-    for m_idx, model_info in enumerate(models):
-        tagset_files_used, feature_matrix, label_matrix, instance_row_idx_set, instance_row_count, op_durations = tagsets_to_matrix(
-            all_tags_l=model_info["all_tags_l"],
-            tag_index_mapping=model_info["tag_index_mapping"],
-            all_label_l=model_info["all_label_l"],
-            label_index_mapping=model_info["label_index_mapping"],
-            tags_by_instance_l=tags_by_instance_l,
-            labels_by_instance_l=labels_by_instance_l,
-            tagset_files=tagset_files,
-            feature_importance=np.array(list(model_info["feature_importance"].values())),
-            inference_flag=False
-        )
-        # encoder_metrics[f"model_{m_idx}"] = op_durations
-        
-        if feature_matrix.size != 0:
-            t_predict_0 = time.time()
-            pred_label_matrix = model_info["clf"].predict(feature_matrix)
-            t_predict_t = time.time()
-            op_durations["predict_time"] = t_predict_t - t_predict_0
-            op_durations["feature_matrix_size"] = feature_matrix.size
-            op_durations["feature_matrix_xsize"] = feature_matrix.shape[0]
-            op_durations["feature_matrix_ysize"] = feature_matrix.shape[1]
-            pred_label_name_d = one_hot_to_names("index_label_mapping", pred_label_matrix, mapping=model_info["mapping"])
-            merged_predictions = merge_preds(merged_predictions, pred_label_name_d, instance_row_idx_set)
-        else:
-            for idx in range(len(instance_ids)):
-                merged_predictions.setdefault(idx, [])
-        encoder_metrics[f"model_{m_idx}"] = op_durations
-
-    predictions = {inst_id: merged_predictions.get(idx, []) for idx, inst_id in enumerate(instance_ids)}
+    # 3) Parallel dispatch
+    with ProcessPoolExecutor(max_workers=min(len(models), os.cpu_count() or 1)) as executor:
+        futures = [
+            executor.submit(
+                _process_model, m_idx, mi,
+                tags_by_instance_l, labels_by_instance_l, tagset_files
+            )
+            for m_idx, mi in enumerate(models)
+        ]
+        for future in as_completed(futures):
+            m_idx, op_durations, (instance_row_idx_set, model_preds) = future.result()
+            encoder_metrics[f"model_{m_idx}"] = op_durations
+            # 4) Merge this model’s preds into the global map
+            merged_predictions = merge_preds(merged_predictions, model_preds, instance_row_idx_set)
+            # print("Merged predictions:", merged_predictions)
+    
+    # 5) Finalize JSON response as before
+    predictions = {
+        inst_id: merged_predictions.get(idx, [])
+        for idx, inst_id in enumerate(instance_ids)
+    }
 
     metrics = {}
     if any(len(lbls) > 0 for lbls in labels_by_instance_l):
