@@ -13,10 +13,10 @@ TARGET_GROUP_NAME = "my-target-group"
 VPC_SUBNETS = ['subnet-0a1f3a70', 'subnet-8b1b96c7', 'subnet-12da3579']  # List of subnet IDs
 SECURITY_GROUPS = ['sg-ef62268b', 'sg-0f50940870990528a']
 VPC_ID = 'vpc-18af6873'  # Your VPC ID
-AMI_ID = 'ami-09fcab8ed06865f2a'  # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b', ms-image: 'ami-086ee73ee039c8623', etc.
+AMI_ID = 'ami-09fcab8ed06865f2a'  # Your VM image (AMI) ID, e.g., Amazon Linux 2 AMI: 'ami-0fc82f4dabc05670b', Ubuntu22: 'ami-0884d2865dbe9de4b', ms-image: 'ami-086ee73ee039c8623', ss-image: 'ami-09fcab8ed06865f2a', etc.
 INSTANCE_TYPE = 'c6i.large'
 KEY_NAME = 'experiment-EC2'  # Name of your pre-created key pair
-USER_DATA_FILE = "/home/cc/ml-model-deployment/deploy/user_data.run.ss"
+USER_DATA_FILE = "/home/cc/ml-model-deployment/deploy/user_data.run.ms" # Path to your user-data script, e.g., single-stage: user_data.init.ss, user_data.run.ss; multi-stage: user_data.init.ms, user_data.run.ms
 
 # Specify your desired instance profile and role details.
 INSTANCE_PROFILE_NAME = "EC2S3AccessProfile"
@@ -262,7 +262,7 @@ def create_asg(target_group_arn, instance_profile_arn):
         LaunchConfigurationName=LAUNCH_CONFIG_NAME,
         MinSize=0,
         MaxSize=5,
-        DesiredCapacity=1,
+        DesiredCapacity=0,
         VPCZoneIdentifier=",".join(VPC_SUBNETS),
         TargetGroupARNs=[target_group_arn]
     )
@@ -316,9 +316,9 @@ if __name__ == '__main__':
     instance_profile_arn = create_instance_profile()
 
     # Create ALB, Target Group, and Listener.
-    # alb_arn, dns_name = create_alb()
+    alb_arn, dns_name = create_alb()
     target_group_arn = create_target_group()
-    # listener_arn = create_listener(alb_arn, target_group_arn)
+    listener_arn = create_listener(alb_arn, target_group_arn)
     
     # Create Auto Scaling Group with instance profile ARN and register to the target group.
     create_asg(target_group_arn, instance_profile_arn)
@@ -331,8 +331,8 @@ if __name__ == '__main__':
     
     # Delete ASG, Listener, Target Group, and ALB
     delete_asg()
-    # delete_listener(listener_arn)
+    delete_listener(listener_arn)
     delete_target_group(target_group_arn)
-    # delete_alb(alb_arn)
+    delete_alb(alb_arn)
 
     delete_instance_profile_and_role()
